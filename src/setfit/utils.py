@@ -61,6 +61,21 @@ def default_hp_space_optuna(trial) -> Dict[str, Any]:
         "batch_size": trial.suggest_categorical("batch_size", [4, 8, 16, 32, 64]),
     }
 
+def default_hp_space_sigopt(trial) -> Dict[str, Any]:
+    from transformers.integrations import is_sigopt_available
+
+    assert is_sigopt_available(), "This function needs Sigopt installed: `pip install sigopt`"
+    return [
+        {"bounds": {"min": 1e-6, "max": 1e-4}, "name": "learning_rate", "type": "double", "transformamtion": "log"},
+        {"bounds": {"min": 1, "max": 6}, "name": "num_train_epochs", "type": "int"},
+        {"bounds": {"min": 1, "max": 40}, "name": "seed", "type": "int"},
+        {
+            "categorical_values": ["4", "8", "16", "32", "64"],
+            "name": "per_device_train_batch_size",
+            "type": "categorical",
+        },
+    ]
+
 
 def load_data_splits(
     dataset: str, sample_sizes: List[int], add_data_augmentation: bool = False

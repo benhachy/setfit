@@ -13,9 +13,9 @@ from tqdm.auto import trange
 from transformers.trainer_utils import HPSearchBackend, default_compute_objective, number_of_arguments, set_seed
 
 from . import logging
-from .integrations import default_hp_search_backend, is_optuna_available, run_hp_search_optuna
+from .integrations import default_hp_search_backend, is_optuna_available, run_hp_search_optuna, is_sigopt_available, run_hp_search_sigopt
 from .modeling import SupConLoss, sentence_pairs_generation, sentence_pairs_generation_multilabel
-from .utils import BestRun, default_hp_space_optuna
+from .utils import BestRun, default_hp_space_optuna, default_hp_space_sigopt
 
 
 if TYPE_CHECKING:
@@ -504,29 +504,50 @@ class SetFitTrainer:
         Returns:
             [`trainer_utils.BestRun`]: All the information about the best run.
         """
+        # Retrieving the default backend (optuna)
         if backend is None:
             backend = default_hp_search_backend()
             if backend is None:
                 raise RuntimeError("optuna should be installed. " "To install optuna run `pip install optuna`. ")
-        backend = HPSearchBackend(backend)
+            
+        backend = HPSearchBackend(backend) # in case backend is str
         if backend == HPSearchBackend.OPTUNA and not is_optuna_available():
             raise RuntimeError("You picked the optuna backend, but it is not installed. Use `pip install optuna`.")
-        elif backend != HPSearchBackend.OPTUNA:
-            raise RuntimeError("Only optuna backend is supported for hyperparameter search.")
+        
+        if backend == HPSearchBackend.SIGOPT and not is_sigopt_available():
+            raise RuntimeError("You picked the sigopt backend, but it is not installed. Use `pip install sigopt`.")
+        
+        elif (backend != HPSearchBackend.OPTUNA)&(backend != HPSearchBackend.SIGOPT):
+            raise RuntimeError("Only optuna and sigopt backends are supported for hyperparameter search.")
+        
         self.hp_search_backend = backend
+        # Checking if we have a model
         if self.model_init is None:
             raise RuntimeError(
                 "To use hyperparameter search, you need to pass your model through a model_init function."
             )
+        
+        if self.hp_search_backend  == HPSearchBackend.OPTUNA:
+            self.hp_space = default_hp_space_optuna if hp_space is None else hp_space
+        elif self.hp_search_backend == HPSearchBackend.SIGOPT:
+            self.hp_space = default_hp_space_sigopt if hp_space is None else hp_space
 
-        self.hp_space = default_hp_space_optuna if hp_space is None else hp_space
         self.hp_name = hp_name
         self.compute_objective = default_compute_objective if compute_objective is None else compute_objective
-
-        backend_dict = {
+        
+        if self.hp_search_backend  == HPSearchBackend.OPTUNA:
+            backend_dict = {
             HPSearchBackend.OPTUNA: run_hp_search_optuna,
-        }
-        best_run = backend_dict[backend](self, n_trials, direction, **kwargs)
+            }
+
+        elif self.hp_search_backend == HPSearchBackend.SIGOPT:
+            backend_dict = {
+            HPSearchBackend.SIGOPT: run_hp_search_sigopt,
+            }
+
+        
+
+        best_run = backend_dict[backend](self, n_trials, direction, **kwargs) # Performing the parameters tuning
 
         self.hp_search_backend = None
         return best_run
